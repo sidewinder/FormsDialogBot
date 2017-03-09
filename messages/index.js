@@ -16,27 +16,59 @@ var connector = useEmulator ? new builder.ChatConnector() : new botbuilder_azure
     openIdMetadata: process.env['BotOpenIdMetadata']
 });
 
-var bot = new builder.UniversalBot(connector);
+var DialogLabels = {
+    Hotels: 'Hotels',
+    Flights: 'Flights',
+    Support: 'Support'
+};
 
-bot.dialog('/', [
+var bot = new builder.UniversalBot(connector, [
     function (session) {
-        builder.Prompts.text(session, "Hello... What's your name?");
+        // prompt for search option
+        builder.Prompts.choice(
+            session,
+            'Are you looking for a flight or a hotel?',
+            [DialogLabels.Flights, DialogLabels.Hotels],
+            {
+                maxRetries: 3,
+                retryPrompt: 'Not a valid option'
+            });
     },
-    function (session, results) {
-        session.userData.name = results.response;
-        builder.Prompts.number(session, "Hi " + results.response + ", How many years have you been coding?"); 
-    },
-    function (session, results) {
-        session.userData.coding = results.response;
-        builder.Prompts.choice(session, "What language do you code Node using?", ["JavaScript", "CoffeeScript", "TypeScript"]);
-    },
-    function (session, results) {
-        session.userData.language = results.response.entity;
-        session.send("Got it... " + session.userData.name + 
-                    " you've been programming for " + session.userData.coding + 
-                    " years and use " + session.userData.language + ".");
+    function (session, result) {
+        if (!result.response) {
+            // exhausted attemps and no selection, start over
+            session.send('Ooops! Too many attemps :( But don\'t worry, I\'m handling that exception and you can try again!');
+            return session.endDialog();
+        }
+
+        // on error, start over
+        session.on('error', function (err) {
+            session.send('Failed with message: %s', err.message);
+            session.endDialog();
+        });
+
+        // continue on proper dialog
+        var selection = result.response.entity;
+        switch (selection) {
+            case DialogLabels.Flights:
+                return session.beginDialog('flights');
+            case DialogLabels.Hotels:
+                return session.beginDialog('hotels');
+        }
     }
 ]);
+
+bot.dialog('flights', require('./flights'));
+bot.dialog('hotels', require('./hotels'));
+bot.dialog('support', require('./support'))
+    .triggerAction({
+        matches: [/help/i, /support/i, /problem/i]
+    });
+
+// log any bot errors into the console
+bot.on('error', function (e) {
+    console.log('And error ocurred', e);
+});
 
 if (useEmulator) {
     var restify = require('restify');
